@@ -204,12 +204,13 @@ void dispenseProduct(int runCount) {
         lcd.print("Dispensing Pad");
         lcd.setCursor(0, 1);
         lcd.print("Collect Now");
-        success(750);
         digitalWrite(motor[i], HIGH);
         delay(motorTimeVariable);
         digitalWrite(motor[i], LOW);
         rack[i].decQuantity();
         --runCount;
+        success(800);
+        delay(1050);
         lcd.clear();
         delay(150);
       }
@@ -241,17 +242,18 @@ void enableCashAcceptor() {
 }
 void runExtra(int &runCount, int i) {
   int extraToRun = min(maxExtraMotorRun, runCount);
-  for (int j = 0; j < extraToRun; j++) {    
+  for (int j = 0; j < extraToRun; j++) {
     lcd.setCursor(0, 0);
     lcd.print("Dispensing Pad");
     lcd.setCursor(0, 1);
     lcd.print("Collect Now");
-    success(750);
     digitalWrite(motor[i], HIGH);
     delay(motorTimeVariable);
     digitalWrite(motor[i], LOW);
     rack[i].decQuantity();
     --runCount;
+    success(800);
+    delay(1050);
     lcd.clear();
     delay(150);
   }
