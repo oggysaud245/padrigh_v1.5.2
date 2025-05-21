@@ -11,6 +11,15 @@
 #define RFID_MACHINE 0
 #define CASH_MACHINE 1
 
+
+//
+
+#define DEFAULT_MAX_RACK  2
+#define DEFAULT_PAD_AMOUNT  10
+#define DEFAULT_MACHINE_TYPE  RFID_MACHINE
+#define DEFAULT_MOTOR_TIME  1500
+#define DEFAULT_MAX_RACK_CAPACITY 48
+
 //for Rupees Count
 #define FIVE_RUPEES 5
 #define TEN_RUPEES 10
@@ -30,6 +39,7 @@ maxExtraMotorRun =>> This means that there will be 4 more pads in rack even rack
 this is for lets say there is is only 1 pad in stock displayed in lcd, but 20 rupees is 
 inserted to machine to tackle this condition 4 more pads are added.
 */
+
 #define maxExtraMotorRun 4        
 #define MAX_CASH_WAIT_TIME 20000  // max 20 milliseconds i.e. 20sec to wait for another cash note
 const byte availablePulses[] = { 1, 2, 5, 10 };
@@ -68,7 +78,7 @@ if machine is rfid type available rack will be 4 in KAWACH_V3.1 PCB if machine i
 available rack will be 3 one pin from motor connector will be used for cash acceptor inhibit line 
 */
 byte availableRack = 3;
-byte maxRack = 2;  // default rack quantity is two, it should be manipulated in manufacturing process through menu;
+byte maxRack = DEFAULT_MAX_RACK;  // default rack quantity is two, it should be manipulated in manufacturing process through menu;
 const byte maxRackAddress = 30;
 const byte maxRackCapacityAddress = 20;
 const byte motorTimeAddress = 10;
@@ -97,19 +107,20 @@ const byte interrupt = 2;  // this is the interrupt pin for cash acceptor or coi
 const byte inhibit = motor4;
 const byte motor[] = { motor1, motor2, motor3, motor4 };
 
+
 ////----------- logic variables -------------
 static uint32_t previous_time;   // for use of button press while managing menu
 static uint32_t previous_time2;  // to track the time while receiving cash
 int count = 0;
 bool change = false;
 bool changeDone = true;  // this is for homepage changes // toggle
-int maxRackCapacity = 20;
-int motorTimeVariable = 1500;
+int maxRackCapacity = DEFAULT_MAX_RACK_CAPACITY;
+int motorTimeVariable = DEFAULT_MOTOR_TIME;
 int topMenuPosition = 0;
 int state = 0;
 bool makeChange = false;  /// this bool variable is for top menu toogle
 char status = 'n';
-int padAmount = 10;
+int padAmount = DEFAULT_PAD_AMOUNT;
 volatile bool isInterrupt = false;
 bool rechCardDetected = false;
 
@@ -542,10 +553,31 @@ void writeToEPPROM(char status) {
   }
 }
 void readFromEEPROM() {
-  padAmount = EEPROM.read(maxPadAddress);
-  mType = EEPROM.read(mTypeAddress);
-  maxRack = EEPROM.read(maxRackAddress);  /// upper three variable must be read first
+  EEPROM.get(maxPadAddress,padAmount);
+  if(padAmount <= 0){
+    padAmount = DEFAULT_PAD_AMOUNT;
+    EEPROM.put(maxPadAddress, padAmount);
+  }
+  EEPROM.get(mTypeAddress,mType);
+  if(mType != CASH_MACHINE && mType != RFID_MACHINE){
+    mType = DEFAULT_MACHINE_TYPE;
+    EEPROM.put(mTypeAddress, mType);
+  }
+  EEPROM.get(maxRackAddress, maxRack);  /// upper three variable must be read first
+  if(maxRack > availableRack || maxRack <= 0){
+    maxRack = DEFAULT_MAX_RACK;
+    EEPROM.put(maxRackAddress, maxRack);
+  } 
+  EEPROM.get(maxRackCapacityAddress, maxRackCapacity);
+  if(maxRackCapacity <= 0){
+    maxRackCapacity = DEFAULT_MAX_RACK_CAPACITY;
+    EEPROM.put(maxRackCapacityAddress, maxRackCapacity);
+  }
   motorTimeVariable = readIntFromEEPROM(motorTimeAddress);
+  if(motorTimeVariable <= 0){
+    motorTimeVariable = DEFAULT_MOTOR_TIME;
+    EEPROM.put(motorTimeAddress, motorTimeVariable);
+  }
   EEPROM.get(cashLimitAddress, CASH_LIMIT);
   if (CASH_LIMIT % FIVE_RUPEES != 0 || CASH_LIMIT > MAX_CASH_LIMIT) {
     CASH_LIMIT = DEFAULT_CASH_LIMIT;
@@ -571,14 +603,9 @@ void readFromEEPROM() {
     cashWaitTime = 5000;
     EEPROM.put(cashWaitTimeAddress, cashWaitTime);
   }
-  if (motorTimeVariable == -1)
-    motorTimeVariable = 0;
   for (int i = 0; i < maxRack; i++) {
     rack[i].setQuantity(EEPROM.read(rackAddress[i]));
   }
-  maxRackCapacity = EEPROM.read(maxRackCapacityAddress);
-  if (maxRackCapacity < 0)
-    maxRackCapacity = 1;
   for (int i = 0; i < maxRack; i++) {
     rack[i].setMaxQuantity(maxRackCapacity);
   }
