@@ -67,7 +67,7 @@ availableRack variable is effective for when maxRack is changed from menu
 if machine is rfid type available rack will be 4 in KAWACH_V3.1 PCB if machine is cash type then
 available rack will be 3 one pin from motor connector will be used for cash acceptor inhibit line 
 */
-byte availableRack = 4;
+byte availableRack = 3;
 byte maxRack = 2;  // default rack quantity is two, it should be manipulated in manufacturing process through menu;
 const byte maxRackAddress = 30;
 const byte maxRackCapacityAddress = 20;
@@ -415,10 +415,8 @@ void menuManagement() {
               delay(300);
               if (mType == RFID_MACHINE) {
                 mType = CASH_MACHINE;
-                availableRack = 3;
               } else {
                 mType = RFID_MACHINE;
-                availableRack = 4;
               }
               machineType();
             }
