@@ -14,10 +14,10 @@
 
 //
 
-#define DEFAULT_MAX_RACK  2
-#define DEFAULT_PAD_AMOUNT  10
-#define DEFAULT_MACHINE_TYPE  RFID_MACHINE
-#define DEFAULT_MOTOR_TIME  1500
+#define DEFAULT_MAX_RACK 2
+#define DEFAULT_PAD_AMOUNT 10
+#define DEFAULT_MACHINE_TYPE RFID_MACHINE
+#define DEFAULT_MOTOR_TIME 1500
 #define DEFAULT_MAX_RACK_CAPACITY 48
 
 //for Rupees Count
@@ -40,7 +40,7 @@ this is for lets say there is is only 1 pad in stock displayed in lcd, but 20 ru
 inserted to machine to tackle this condition 4 more pads are added.
 */
 
-#define maxExtraMotorRun 4        
+#define maxExtraMotorRun 4
 #define MAX_CASH_WAIT_TIME 20000  // max 20 milliseconds i.e. 20sec to wait for another cash note
 const byte availablePulses[] = { 1, 2, 5, 10 };
 int CASH_LIMIT = DEFAULT_CASH_LIMIT;
@@ -451,6 +451,7 @@ void menuManagement() {
             ;
           break;
         case 'w':
+          cashWait();
           while (digitalRead(okButton)) {
             // delay(300);
             if (!digitalRead(selectButton)) {
@@ -553,28 +554,28 @@ void writeToEPPROM(char status) {
   }
 }
 void readFromEEPROM() {
-  EEPROM.get(maxPadAddress,padAmount);
-  if(padAmount <= 0){
+  EEPROM.get(maxPadAddress, padAmount);
+  if (padAmount <= 0) {
     padAmount = DEFAULT_PAD_AMOUNT;
     EEPROM.put(maxPadAddress, padAmount);
   }
-  EEPROM.get(mTypeAddress,mType);
-  if(mType != CASH_MACHINE && mType != RFID_MACHINE){
+  EEPROM.get(mTypeAddress, mType);
+  if (mType != CASH_MACHINE && mType != RFID_MACHINE) {
     mType = DEFAULT_MACHINE_TYPE;
     EEPROM.put(mTypeAddress, mType);
   }
   EEPROM.get(maxRackAddress, maxRack);  /// upper three variable must be read first
-  if(maxRack > availableRack || maxRack <= 0){
+  if (maxRack > availableRack || maxRack <= 0) {
     maxRack = DEFAULT_MAX_RACK;
     EEPROM.put(maxRackAddress, maxRack);
-  } 
+  }
   EEPROM.get(maxRackCapacityAddress, maxRackCapacity);
-  if(maxRackCapacity <= 0){
+  if (maxRackCapacity <= 0) {
     maxRackCapacity = DEFAULT_MAX_RACK_CAPACITY;
     EEPROM.put(maxRackCapacityAddress, maxRackCapacity);
   }
   motorTimeVariable = readIntFromEEPROM(motorTimeAddress);
-  if(motorTimeVariable <= 0){
+  if (motorTimeVariable <= 0) {
     motorTimeVariable = DEFAULT_MOTOR_TIME;
     EEPROM.put(motorTimeAddress, motorTimeVariable);
   }
@@ -621,16 +622,22 @@ int readIntFromEEPROM(int address) {
 
 void runMotor() {
   Serial.println("motor running");
+  static int i = 0;
+  /// only for pad vending machine for testing alternating motor
   if (getStock() > 0) {
-    for (int i = 0; i < maxRack; i++) {
+    for (int count = 0; count < maxRack; count++) {
       if (rack[i].getQuantity() != 0) {
         // Serial.println("motor");
         digitalWrite(motor[i], HIGH);
         delay(motorTimeVariable);
         digitalWrite(motor[i], LOW);
         rack[i].decQuantity();
+        // move to next rack for next call
+        i = (i + 1) % maxRack;
         break;
       }
+      // move to next rack and wrap around if needed
+      i = (i + 1) % maxRack;
     }
     writeToEPPROM('r');
   }
