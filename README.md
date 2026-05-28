@@ -1,6 +1,6 @@
 # PadRight V1.5.1
 
-PadRight V1.5.1 is an Arduino-based project for managing pad vending machines. It supports RFID and cash-based operations, allowing users to interact with the machine via an LCD interface.
+PadRight V1.5.2 is an Arduino-based project for managing pad vending machines. It supports RFID and cash-based operations, allowing users to interact with the machine via an LCD interface.
 
 **This code works for KAWACH_V3.1 PCB.**
 

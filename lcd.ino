@@ -126,6 +126,17 @@ void topMenu() {
         lcd.print("Cash Wait Time");
       }
       break;
+    case 8:
+      if (mType == CASH_MACHINE) {
+        lcd.clear();
+        lcd.setCursor(2, 0);
+        lcd.print("Cash Wait Time");
+        lcd.setCursor(0, 1);
+        lcd.write((byte)0);
+        lcd.setCursor(2, 1);
+        lcd.print("Cash Per Pad");
+      }
+      break;
   }
 }
 
@@ -182,6 +193,15 @@ void cashLimit() {
   lcd.print(CASH_LIMIT);
   lcd.print(" Rupees");
 }
+void cashPerPad() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Set Cash Per Pad");
+  lcd.setCursor(0, 1);
+  // enter number
+  lcd.print(CASH_PER_PAD);
+  lcd.print(" Rupees");
+}
 void pulseLimit() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -219,8 +239,6 @@ void fillMenu() {
   lcd.setCursor(0, 1);
   lcd.print("of one Rack:");
   lcd.print(maxRackCapacity);
-  // write to eeprom
-  writeToEPPROM('f');
 }
 void fillingAllRack() {
   {

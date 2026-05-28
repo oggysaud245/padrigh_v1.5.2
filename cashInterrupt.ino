@@ -27,9 +27,7 @@ void mangaeCash() {
         delay(500);
         delay(1000);
         isInterrupt = false;
-        if (isInterrupt)
-          continue;
-        currentCash = (int)(cashPulseCounter * cashPulseFactor);
+        currentCash = (int)round((float)(cashPulseCounter * cashPulseFactor));
         totalCash += currentCash;
         previous_time2 = millis();
         switch (currentCash) {
@@ -123,6 +121,15 @@ void mangaeCash() {
             lcd.print(String(totalCash));
             cashPulseCounter = 0;
             break;
+          default:
+            lcd.clear();
+            lcd.setCursor(0, 0);
+            lcd.print("Invalid Notes");
+            lcd.setCursor(0, 1);
+            lcd.print("Total: ");
+            lcd.print(String(totalCash));
+            cashPulseCounter = 0;
+            break;
         }
         if (totalCash >= CASH_LIMIT) {
           delay(1000);
@@ -138,47 +145,58 @@ void mangaeCash() {
           enableCashAcceptor();
         }
       }
-    }
-    disableCashAcceptor();
-    switch (totalCash) {
-      case FIVE_RUPEES:
-        dispenseProduct(1);
-        break;
-      case TEN_RUPEES:
-        dispenseProduct(2);
-        break;
-      case FIFTEEN_RUPEES:
-        dispenseProduct(3);
-        break;
-      case TWENTY_RUPEES:
-        dispenseProduct(4);
-        break;
-      case TWENTY_FIVE_RUPEES:
-        dispenseProduct(5);
-        break;
-      case THIRTY_RUPEES:
-        dispenseProduct(6);
-        break;
-      case THITY_FIVE_RUPEES:
-        dispenseProduct(7);
-        break;
-      case FOURTY_RUPEES:
-        dispenseProduct(8);
-        break;
-      case FOURTY_FIVE_RUPEES:
-        dispenseProduct(9);
-        break;
-      case FIFTY_RUPEES:
-        dispenseProduct(10);
-        break;
-      default:
+
+      // Only for machine in which pad cost Rs 10. This is to wait until there is multiple of CASH_PER_PAD
+      if (totalCash % CASH_PER_PAD != 0) {
+        uint32_t _time = millis();
+        int remaining = CASH_PER_PAD - (totalCash % CASH_PER_PAD);
+        delay(1000);
         lcd.clear();
         lcd.setCursor(0, 0);
-        lcd.print("Invalid Amount");
-        lcd.setCursor(0, 0);
-        lcd.print("Error!!");
-        warning();
-        break;
+        lcd.print("Insert Rs.");
+        lcd.print(remaining);
+        lcd.print(" more");
+        lcd.setCursor(0, 1);
+        lcd.print("Waiting..");
+
+        uint32_t lastwait = 0;
+
+        while (totalCash % CASH_PER_PAD != 0) {
+          uint32_t elapsed = (millis() - _time) / 1000;  // Update elapsed time each iteration
+
+          if (elapsed <= 10) {
+            if (elapsed != lastwait) {
+              lcd.setCursor(9, 1);
+              lcd.print(String(10 - elapsed));
+              lastwait = elapsed;
+            }
+          }
+          // Optional: Add a small delay to prevent too many LCD updates
+          delay(100);
+
+          // Check if cash was updated via interrupt or coin acceptor
+          if (isInterrupt) {
+            previous_time2 = millis();
+            break;
+          }
+          if (elapsed >= 10) {
+            break;
+          }
+        }
+      }
+    }
+
+    disableCashAcceptor();
+    int padsToDispense = (int)round((float)totalCash / CASH_PER_PAD);
+    if (padsToDispense > 0) {
+      dispenseProduct(padsToDispense);
+    } else if (totalCash > 0) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Invalid Amount");
+      lcd.setCursor(0, 1);
+      lcd.print("Error!!");
+      warning();
     }
     currentCash = 0;
     totalCash = 0;
@@ -250,7 +268,6 @@ void runExtra(int &runCount, int i) {
     digitalWrite(motor[i], HIGH);
     delay(motorTimeVariable);
     digitalWrite(motor[i], LOW);
-    rack[i].decQuantity();
     --runCount;
     success(800);
     delay(1050);

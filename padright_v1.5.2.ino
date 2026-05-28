@@ -10,7 +10,7 @@
 #define PADCARD 80   //card identifier as set padAmount
 #define RFID_MACHINE 0
 #define CASH_MACHINE 1
-
+#define MAX_CASH_PER_PAD 20
 
 //
 
@@ -34,6 +34,7 @@
 #define MAX_CASH_LIMIT 250
 #define DEFAULT_CASH_LIMIT TWENTY_RUPEES
 #define DEFAULT_CASH_WAIT_TIME 5000
+#define DEFAULT_CASH_PER_PAD 5
 /*
 maxExtraMotorRun =>> This means that there will be 4 more pads in rack even rack quantity is displayed zero, 
 this is for lets say there is is only 1 pad in stock displayed in lcd, but 20 rupees is 
@@ -44,7 +45,9 @@ inserted to machine to tackle this condition 4 more pads are added.
 #define MAX_CASH_WAIT_TIME 20000  // max 20 milliseconds i.e. 20sec to wait for another cash note
 const byte availablePulses[] = { 1, 2, 5, 10 };
 int CASH_LIMIT = DEFAULT_CASH_LIMIT;
+int CASH_PER_PAD = DEFAULT_CASH_PER_PAD;
 const byte cashLimitAddress = 35;
+const byte cashPerPadAddress = 40;
 int currentCash = 0;
 int cashWaitTime = DEFAULT_CASH_WAIT_TIME;  // in milliseconds
 const byte cashWaitTimeAddress = 45;
@@ -52,7 +55,7 @@ volatile int cashPulseCounter = 0;
 int pulseForFiveRupeeNote = availablePulses[0];
 int totalCash = 0;
 float cashPulseFactor = (float)(5.0 / pulseForFiveRupeeNote);  // used to determine total amount received; total amount = cashPulseounter*cashPulseFactor
-const byte pulseForFiveRupeeNoteAddress = 40;
+const byte pulseForFiveRupeeNoteAddress = 50;
 MFRC522 mfrc522(SS_PIN, RST_PIN);  // Create MFRC522 instance.
 MFRC522::MIFARE_Key key;
 MFRC522::StatusCode rfidstatus;
@@ -129,7 +132,8 @@ byte arrow[8] = {
   0b11100,
   0b10010,
   0b01001,
-  0b01001, +0b10010,
+  0b01001,
+  0b10010,
   0b11100,
   0b00000
 };
@@ -140,16 +144,16 @@ void setup() {
   lcd.createChar(0, arrow);
   readFromEEPROM();
   pinSetup();
-  disableCashAcceptor();
   if (mType == CASH_MACHINE) {
     attachInterrupt(digitalPinToInterrupt(interrupt), _interrupt, FALLING);
+    disableCashAcceptor();
   } else {
     // detachInterrupt(digitalPinToInterrupt(interrupt));
     SPI.begin();         // Init SPI bus
     mfrc522.PCD_Init();  // Init MFRC522 card
   }
   if (EEPROM.read(firstBootAddress) != firstBoot) {
-    Serial.println("Frist Boot");
+    Serial.println(F("Frist Boot"));
     writeToEPPROM('y');
     delay(100);
     EEPROM.write(firstBootAddress, firstBoot);
@@ -171,12 +175,11 @@ void setup() {
     makeChange = true;
     changeDone = true;
     state = 1;
-    status = 'n';
+    status = 'n';   
     menu();
-    while (!digitalRead(menuButton)) {
-      ;
-    }
-  } else
+    while (!digitalRead(menuButton)); 
+    delay(500); // 500ms debounce after release
+  } else if (mType == CASH_MACHINE)
     enableCashAcceptor();
 }
 
@@ -201,7 +204,7 @@ void pinSetup() {
   pinMode(selectButton, INPUT_PULLUP);
   pinMode(okButton, INPUT_PULLUP);
   if (mType == CASH_MACHINE) {
-    pinMode(inhibit, OUTPUT);
+    // pinMode(inhibit, OUTPUT);
     pinMode(interrupt, INPUT_PULLUP);
   }
   pinMode(buzzer, OUTPUT);
@@ -213,93 +216,117 @@ void pinSetup() {
 }
 void menuManagement() {
   previous_time = millis();
-  static bool buzzerNotification = false;
-  while (!digitalRead(menuButton)) {
-    if (!digitalRead(okButton) && digitalRead(selectButton) && mType == RFID_MACHINE) {
-      if (millis() - previous_time >= 5000) {
-        if (!buzzerNotification) {
+  
+  // Shortcuts from Home Page (state == 0)
+  if (state == 0) {
+    // Select Button -> Fill All Racks (requires 1.5s hold)
+    if (!digitalRead(selectButton)) {
+      uint32_t press_start = millis();
+      while (!digitalRead(selectButton)) {
+        if (millis() - press_start >= 1500) {
           success(300);
-          success(300);
+          fillingAllRack();
+          state = 0;
+          status = 'n';
+          makeChange = true;
+          changeDone = true;
+          menu();
+          return;
         }
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Batch Write");
-        lcd.setCursor(0, 1);
-        lcd.print("Mode");
-        delay(2000);
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Scan Card!");
+      }
+    }
+    
+    // OK Button -> Batch Write Mode (requires 1.5s hold)
+    if (!digitalRead(okButton) && mType == RFID_MACHINE) {
+      uint32_t press_start = millis();
+      while (!digitalRead(okButton)) {
+        if (millis() - press_start >= 1500) {
+          success(300);
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Batch Write");
+          lcd.setCursor(0, 1);
+          lcd.print("Mode");
+          delay(2000);
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Scan Card!");
 
-        while (digitalRead(okButton)) {
-          Serial.println("inside ");
-          if (mfrc522.PICC_IsNewCardPresent()) {
-            if (mfrc522.PICC_ReadCardSerial()) {
-              if (readCard()) {
-                if (readByte[0] == FILLCARD || readByte[0] == RECHCARD || readByte[0] == PADCARD) {
-                  lcd.setCursor(0, 1);
-                  lcd.print("Error, Menu Card");
-                  delay(1000);
-                } else {
-                  writeByte[0] = 0;
-                  writeByte[15] = padAmount;
-                  if (writeCard(writeByte)) {
+          while (digitalRead(okButton)) {
+            if (mfrc522.PICC_IsNewCardPresent()) {
+              if (mfrc522.PICC_ReadCardSerial()) {
+                if (readCard()) {
+                  if (readByte[0] == FILLCARD || readByte[0] == RECHCARD || readByte[0] == PADCARD) {
                     lcd.setCursor(0, 1);
-                    lcd.print("Done");
-                    success(500);
+                    lcd.print("Error, Menu Card");
+                    delay(1000);
+                  } else {
+                    writeByte[0] = 0;
+                    writeByte[15] = padAmount;
+                    if (writeCard(writeByte)) {
+                      lcd.setCursor(0, 1);
+                      lcd.print("Done");
+                      success(500);
+                    }
                   }
                 }
+                lcd.clear();
+                lcd.setCursor(0, 0);
+                lcd.print("Scan Card!");
+                halt();
               }
-              lcd.clear();
-              lcd.setCursor(0, 0);
-              lcd.print("Scan Card!");
-              halt();
             }
           }
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Exiting...");
+          delay(500);
+          state = 0;
+          status = 'n';
+          makeChange = true;
+          changeDone = true;
+          menu();
+          return;
         }
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Exiting...");
-        delay(500);
-        state = 0;
-        status = 'n';
-        makeChange = true;
-        changeDone = true;
-        buzzerNotification = !buzzerNotification;
-        menu();
       }
-    } else if (!digitalRead(selectButton) && digitalRead(okButton)) {
-      if (millis() - previous_time >= 5000) {
-        success(300);
-        success(300);
-        /// filling all rack
-        fillingAllRack();
-        state = 0;
-        status = 'n';
-        makeChange = true;
-        changeDone = true;
-        menu();
+    }
+  }
+
+  // Normal Menu Navigation (when state == 1)
+  if (state == 1) {
+    if (!digitalRead(menuButton)) {
+      uint32_t press_start = millis();
+      while (!digitalRead(menuButton)) {
+        if (millis() - press_start >= 1000) {  // 1s hold to exit menu
+          state = 0;
+          status = 'n';
+          changeDone = true;
+          menu();
+          return;
+        }
       }
-    } else {
-      state = 0;
-      status = 'v';
     }
   }
 
   if (status == 'n') {
     if (!digitalRead(selectButton)) {
       delay(300);
+      while (!digitalRead(selectButton))
+        ;
       topMenuPosition++;
       if (mType == RFID_MACHINE && topMenuPosition == 6)
         topMenuPosition = 0;
-      if (mType == CASH_MACHINE && topMenuPosition >= 8)
+      if (mType == CASH_MACHINE && topMenuPosition >= 9)
         topMenuPosition = 0;
       makeChange = true;
       changeDone = true;
     }
 
     if (!digitalRead(okButton) && state == 1) {
-      delay(300);
+      delay(500);  // Robust debounce
+      while (!digitalRead(okButton))
+        ;
+      delay(200);  // Stabilize after release
       if (state == 1 && topMenuPosition == 0)
         status = 'r';  // pads in  rack
       else if (state == 1 && topMenuPosition == 1)
@@ -324,6 +351,10 @@ void menuManagement() {
       } else if (state == 1 && topMenuPosition == 7) {
         if (mType == CASH_MACHINE)
           status = 'w';  // inserting cash wait time  setting
+      }
+      else if (state == 1 && topMenuPosition == 8) {
+        if (mType == CASH_MACHINE)
+          status = 'x';  // cash per pad setting
       }
       // Serial.println(status);
 
@@ -400,7 +431,7 @@ void menuManagement() {
           while (digitalRead(okButton)) {
             if (mfrc522.PICC_IsNewCardPresent()) {
               if (mfrc522.PICC_ReadCardSerial()) {
-                //               writeByte[0] = 0;
+                // writeByte[0] = 0;
                 writeByte[15] = padAmount;
                 if (writeCard(writeByte)) {
                   lcd.setCursor(0, 1);
@@ -465,10 +496,10 @@ void menuManagement() {
           while (!digitalRead(okButton))
             ;
           break;
-        case 'p':
+        case 'p': {
           pulseLimit();
           byte length = sizeof(availablePulses) / sizeof(availablePulses[0]);
-          byte currentIndex = -1;
+          int8_t currentIndex = -1;
           for (int i = 0; i < length; i++) {
             if (availablePulses[i] == pulseForFiveRupeeNote) {
               currentIndex = i;
@@ -479,11 +510,28 @@ void menuManagement() {
             // delay(300);
             if (!digitalRead(selectButton)) {
               delay(300);
+              while (!digitalRead(selectButton))
+                ;
               currentIndex++;
               if (currentIndex >= length)
                 currentIndex = 0;
               pulseForFiveRupeeNote = availablePulses[currentIndex];
               pulseLimit();
+            }
+          }
+          while (!digitalRead(okButton))
+            ;
+          break;
+        }
+        case 'x':
+          cashPerPad();
+          while (digitalRead(okButton)) {
+            if (!digitalRead(selectButton)) {
+              delay(300);
+              CASH_PER_PAD = CASH_PER_PAD + 5;
+              if (CASH_PER_PAD > MAX_CASH_PER_PAD)
+                CASH_PER_PAD = 5;
+              cashPerPad();
             }
           }
           while (!digitalRead(okButton))
@@ -539,7 +587,7 @@ void writeToEPPROM(char status) {
     EEPROM.write(mTypeAddress, mType);
     EEPROM.write(maxRackAddress, maxRack);
     EEPROM.write(maxPadAddress, padAmount);
-    EEPROM.write(maxRackCapacity, maxRackAddress);
+    EEPROM.put(maxRackCapacityAddress, maxRackCapacity);
     writeIntIntoEEPROM(motorTimeAddress, motorTimeVariable);
     for (int i = 0; i < maxRack; i++) {
       EEPROM.write(rackAddress[i], maxRackCapacity);
@@ -551,9 +599,16 @@ void writeToEPPROM(char status) {
     cashPulseFactor = (float)(5.0 / pulseForFiveRupeeNote);
   } else if (status == 'w') {
     EEPROM.put(cashWaitTimeAddress, cashWaitTime);
+  } else if (status == 'x') {
+    EEPROM.put(cashPerPadAddress, CASH_PER_PAD);
   }
 }
 void readFromEEPROM() {
+  EEPROM.get(cashPerPadAddress, CASH_PER_PAD);
+  if (CASH_PER_PAD <= 0) {
+    CASH_PER_PAD = DEFAULT_CASH_PER_PAD;
+    EEPROM.put(cashPerPadAddress, CASH_PER_PAD);
+  }
   EEPROM.get(maxPadAddress, padAmount);
   if (padAmount <= 0) {
     padAmount = DEFAULT_PAD_AMOUNT;
@@ -580,7 +635,7 @@ void readFromEEPROM() {
     EEPROM.put(motorTimeAddress, motorTimeVariable);
   }
   EEPROM.get(cashLimitAddress, CASH_LIMIT);
-  if (CASH_LIMIT % FIVE_RUPEES != 0 || CASH_LIMIT > MAX_CASH_LIMIT) {
+  if (CASH_LIMIT <= 0 || CASH_LIMIT % FIVE_RUPEES != 0 || CASH_LIMIT > MAX_CASH_LIMIT) {
     CASH_LIMIT = DEFAULT_CASH_LIMIT;
     EEPROM.put(cashLimitAddress, DEFAULT_CASH_LIMIT);
   }
@@ -595,12 +650,12 @@ void readFromEEPROM() {
   }
   if (!valid) {
     pulseForFiveRupeeNote = availablePulses[0];
-    writeIntIntoEEPROM(pulseForFiveRupeeNoteAddress, pulseForFiveRupeeNote);
+    EEPROM.put(pulseForFiveRupeeNoteAddress, pulseForFiveRupeeNote);
   }
   // to update cashPulseFactor
   cashPulseFactor = (float)(5.0 / pulseForFiveRupeeNote);
   EEPROM.get(cashWaitTimeAddress, cashWaitTime);
-  if (cashWaitTime > MAX_CASH_WAIT_TIME && cashWaitTime <= 0) {
+  if (cashWaitTime > MAX_CASH_WAIT_TIME || cashWaitTime <= 0) {
     cashWaitTime = 5000;
     EEPROM.put(cashWaitTimeAddress, cashWaitTime);
   }
@@ -688,6 +743,6 @@ void machineDetails() {
     var += "\nRack " + String(i + 1) + " Quantity: " + String(rack[i].getQuantity());
   }
 
-  Serial.println(var);
+ Serial.println(var);
   delay(1000);
 }
